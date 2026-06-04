@@ -1,24 +1,38 @@
-# Backend Execution Lock Manager
+# lock_manager
 
-## Overview
-`backend/execution/lock_manager` is the documentation entry for the `lock_manager` module within the BalanceKube repository.
-Cluster lock acquisition and management.
-This folder is part of the `backend` domain and provides focused behavior for `Lock Manager`.
+## Purpose
+Manages the per-cluster execution mutex to prevent concurrent Phase 4 executions from corrupting the cluster state.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `lock_manager` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Lock Manager` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Acquire and release `execution_locks` before and after execution.
+- Auto-expire locks after 2 hours (TTL) to recover from crashes.
 
-- This leaf module is one part of the `execution` domain within `backend`. Related sibling modules include `capacity_provisioning`, `execution_history`, `health_validation`, `node_drain`, `plan_validation`, `spot_placement`, `workload_migration`.
+## Database Tables
+- Writes: `execution_locks` (cluster_id, acquired_at, expires_at, execution_id)
 
-## Subfolders
-- This module has no further nested subfolders.
+## Inputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/execution/execution.md` for the parent domain documentation, if available.
+## Outputs
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Produced
+- N/A
+
+## Events Consumed
+- N/A
+
+## APIs
+- N/A
+
+## Dependencies
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

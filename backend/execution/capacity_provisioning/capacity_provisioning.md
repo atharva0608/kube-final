@@ -1,24 +1,39 @@
-# Backend Execution Capacity Provisioning
+# capacity_provisioning
 
-## Overview
-`backend/execution/capacity_provisioning` is the documentation entry for the `capacity_provisioning` module within the BalanceKube repository.
-Spot capacity provisioning for execution.
-This folder is part of the `backend` domain and provides focused behavior for `Capacity Provisioning`.
+## Purpose
+Handles the optional provisioning of Spot instances using Karpenter NodeClaims before workload migration.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `capacity_provisioning` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Capacity Provisioning` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Checks `karpenter_control_mode`. If `managed`, generates NodeClaims. If `observe`, skips provisioning.
+- Applies a 20% CPU/memory buffer.
+- Polls NodeClaim status every 10s up to 120s.
 
-- This leaf module is one part of the `execution` domain within `backend`. Related sibling modules include `execution_history`, `health_validation`, `lock_manager`, `node_drain`, `plan_validation`, `spot_placement`, `workload_migration`.
+## Inputs
+- Reads `clusters.cluster_template`.
 
-## Subfolders
-- This module has no further nested subfolders.
+## Outputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/execution/execution.md` for the parent domain documentation, if available.
+## Events Produced
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Consumed
+- N/A
+
+## Database Tables
+- N/A
+
+## APIs
+- N/A
+
+## Dependencies
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

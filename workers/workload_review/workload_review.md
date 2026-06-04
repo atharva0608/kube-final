@@ -8,6 +8,7 @@ Review notification dispatch job. Notifies operators when workloads require manu
 - Delegates actual delivery to `workers/notifications`.
 
 ## Inputs
+- Queue: `queue:workload_review`
 - Source: `review.pending` event.
 - Format: Event payload.
 

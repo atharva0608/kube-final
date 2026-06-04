@@ -10,6 +10,7 @@ Spot Advisor scrape job. Pulls historical interruption data to compute risk scor
 - Caches risk scores in Redis with an 86400s (24h) TTL.
 
 ## Inputs
+- Queue: `queue:spot_risk_collection`
 - Source: Cron schedule (daily).
 - Format: Internal trigger.
 

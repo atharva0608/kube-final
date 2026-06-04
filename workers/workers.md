@@ -9,6 +9,24 @@ Background worker processes for event-driven pipeline execution. This module han
 - Routes permanent failures to dead-letter queues.
 - Enables event replay from the `event_store` to recover failed pipeline stages.
 
+## Queues
+Each sub-module operates on a dedicated BullMQ queue to allow independent scaling and isolated failure domains:
+- `queue:onboarding`
+- `queue:cluster_inventory`
+- `queue:metrics_collection`
+- `queue:pricing_collection`
+- `queue:spot_risk_collection`
+- `queue:snapshot_assembly`
+- `queue:workload_review`
+- `queue:workload_classification`
+- `queue:resource_analysis`
+- `queue:eligibility_engine`
+- `queue:recommendations`
+- `queue:drift_detection`
+- `queue:execution`
+- `queue:rollback`
+- `queue:notifications`
+
 ## Inputs
 - Source: NATS events, BullMQ queues, Cron schedules.
 - Format: Domain event JSON payloads.

@@ -1,24 +1,38 @@
-# Backend Execution Spot Placement
+# spot_placement
 
-## Overview
-`backend/execution/spot_placement` is the documentation entry for the `spot_placement` module within the BalanceKube repository.
-Spot placement policy application.
-This folder is part of the `backend` domain and provides focused behavior for `Spot Placement`.
+## Purpose
+Handles Node and Pod scheduling guidance via labels and taints.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `spot_placement` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Spot Placement` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Applies `balancekube.io/critical-only=true:NoSchedule` taint to on-demand nodes.
+- Applies BalanceKube-managed labels to newly provisioned Spot nodes.
 
-- This leaf module is one part of the `execution` domain within `backend`. Related sibling modules include `capacity_provisioning`, `execution_history`, `health_validation`, `lock_manager`, `node_drain`, `plan_validation`, `workload_migration`.
+## Inputs
+- N/A
 
-## Subfolders
-- This module has no further nested subfolders.
+## Outputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/execution/execution.md` for the parent domain documentation, if available.
+## Events Produced
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Consumed
+- N/A
+
+## Database Tables
+- N/A
+
+## APIs
+- N/A
+
+## Dependencies
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

@@ -14,10 +14,10 @@ Manages the full lifecycle of the BalanceKube in-cluster Go agent: registration,
 - Store only the SHA-256 hash of registration tokens in the database; plaintext shown once to the operator at generation time, never retrievable again.
 
 ## Inputs
-- **Source:** `POST /agents/register` — agent registration request with `token` (plaintext, verified via hash comparison against `cluster_tokens.token_hash`), `agent_version`, `cluster_id`.
-- **Source:** `POST /agents/:id/heartbeat` — periodic heartbeat payload: `{ agent_version, cluster_id, collection_cycle_count, last_error, node_count }`.
-- **Source:** `POST /agents/:id/rotate-token` — agent-initiated rotation request, authenticated with the current valid mTLS certificate.
-- **Source:** `GET /agents/:id/upgrade` — agent polls for upgrade availability; receives signed binary URL and checksum.
+- **Source:** `POST /api/v1/agents/register` — agent registration request with `token` (plaintext, verified via hash comparison against `cluster_tokens.token_hash`), `agent_version`, `cluster_id`.
+- **Source:** `POST /api/v1/agents/:id/heartbeat` — periodic heartbeat payload: `{ agent_version, cluster_id, collection_cycle_count, last_error, node_count }`. The HTTP 200 response serves as the asynchronous instruction delivery mechanism for the agent (e.g. to push execution plans with ~30-second polling latency).
+- **Source:** `POST /api/v1/agents/:id/rotate-token` — agent-initiated rotation request, authenticated with the current valid mTLS certificate.
+- **Source:** `GET /api/v1/agents/:id/upgrade` — agent polls for upgrade availability; receives signed binary URL and checksum.
 - **Source:** `DELETE /clusters/:id/agent` — operator-initiated agent uninstall.
 - **Format:** All API inputs are JSON over HTTPS (mTLS required for all endpoints except initial registration).
 
@@ -63,17 +63,17 @@ Manages the full lifecycle of the BalanceKube in-cluster Go agent: registration,
 ## APIs
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/agents/register` | Register a new agent. Validates token hash, issues mTLS certificate, returns cluster configuration. Returns `{ agent_id, certificate_pem, ca_pem, config: { snapshot_interval_seconds, api_version, feature_flags } }`. |
-| `POST` | `/agents/:id/heartbeat` | Accept a heartbeat payload. Updates `agents.last_heartbeat_at`, resets missed-heartbeat counter, updates `version`, `node_count`, `last_error`. Returns HTTP 200 on success. |
-| `GET` | `/agents/:id/upgrade` | Return upgrade availability. Response: `{ upgrade_available: boolean, new_version?, download_url?, sha256_checksum? }`. Download URL is time-limited (15 minutes) and platform-signed. |
-| `POST` | `/agents/:id/rotate-token` | Initiate certificate rotation. Returns new certificate PEM. Agent continues using old certificate until it sends a heartbeat authenticated with the new one. |
+| `POST` | `/api/v1/agents/register` | Register a new agent. Validates token hash, issues mTLS certificate, returns cluster configuration. Returns `{ agent_id, certificate_pem, ca_pem, config: { snapshot_interval_seconds, api_version, feature_flags } }`. |
+| `POST` | `/api/v1/agents/:id/heartbeat` | Accept a heartbeat payload. Updates `agents.last_heartbeat_at`, resets missed-heartbeat counter, updates `version`, `node_count`, `last_error`. Returns HTTP 200 on success with optional instruction payload (`{ instructions: [...] }`). |
+| `GET` | `/api/v1/agents/:id/upgrade` | Return upgrade availability. Response: `{ upgrade_available: boolean, new_version?, download_url?, sha256_checksum? }`. Download URL is time-limited (15 minutes) and platform-signed. |
+| `POST` | `/api/v1/agents/:id/rotate-token` | Initiate certificate rotation. Returns new certificate PEM. Agent continues using old certificate until it sends a heartbeat authenticated with the new one. |
 | `DELETE` | `/clusters/:id/agent` | Mark agent as unregistered and invalidate all associated tokens. Used during cluster offboarding. |
 
 ## Agent State Machine
 ```
 unregistered
     │
-    ▼ POST /agents/register
+    ▼ POST /api/v1/agents/register
 registered
     │
     ▼ First heartbeat received
@@ -96,7 +96,7 @@ active ─► upgrading ─► active (success)
 ```
 
 ## Certificate Rotation Sequence
-1. Agent detects its certificate will expire in ≤ 7 days and calls `POST /agents/:id/rotate-token`.
+1. Agent detects its certificate will expire in ≤ 7 days and calls `POST /api/v1/agents/:id/rotate-token`.
 2. Platform CA issues a new client certificate (30-day validity) and returns it as PEM.
 3. Agent stores the new certificate alongside the old one.
 4. Agent continues sending heartbeats authenticated with the **old** certificate during the transition window.

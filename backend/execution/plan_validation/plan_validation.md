@@ -1,24 +1,38 @@
-# Backend Execution Plan Validation
+# plan_validation
 
-## Overview
-`backend/execution/plan_validation` is the documentation entry for the `plan_validation` module within the BalanceKube repository.
-Execution plan validation before execution.
-This folder is part of the `backend` domain and provides focused behavior for `Plan Validation`.
+## Purpose
+Ensures the execution plan matches the current cluster state before taking action.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `plan_validation` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Plan Validation` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Validates the 3-part identity: `snapshot_id`, `analysis_version`, `cluster_hash`.
+- Aborts execution if the plan is stale.
 
-- This leaf module is one part of the `execution` domain within `backend`. Related sibling modules include `capacity_provisioning`, `execution_history`, `health_validation`, `lock_manager`, `node_drain`, `spot_placement`, `workload_migration`.
+## Dependencies
+- Reads `assembled_snapshots` and `recommendation_store`.
 
-## Subfolders
-- This module has no further nested subfolders.
+## Inputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/execution/execution.md` for the parent domain documentation, if available.
+## Outputs
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Produced
+- N/A
+
+## Events Consumed
+- N/A
+
+## Database Tables
+- N/A
+
+## APIs
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

@@ -1,24 +1,38 @@
-# Backend Execution Execution History
+# execution_history
 
-## Overview
-`backend/execution/execution_history` is the documentation entry for the `execution_history` module within the BalanceKube repository.
-Execution history storage and audit trail.
-This folder is part of the `backend` domain and provides focused behavior for `Execution History`.
+## Purpose
+Records the outcome of every Phase 4 execution run.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `execution_history` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Execution History` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Writes the final status (success, rolled_back, failed, aborted) and failure reasons.
+- Tracks `nodes_provisioned`, `nodes_drained`, `workloads_migrated`, `savings_realised_monthly`.
 
-- This leaf module is one part of the `execution` domain within `backend`. Related sibling modules include `capacity_provisioning`, `health_validation`, `lock_manager`, `node_drain`, `plan_validation`, `spot_placement`, `workload_migration`.
+## Database Tables
+- Writes: `execution_history`
 
-## Subfolders
-- This module has no further nested subfolders.
+## Inputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/execution/execution.md` for the parent domain documentation, if available.
+## Outputs
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Produced
+- N/A
+
+## Events Consumed
+- N/A
+
+## APIs
+- N/A
+
+## Dependencies
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

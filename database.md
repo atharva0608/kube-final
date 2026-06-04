@@ -142,6 +142,21 @@ CREATE TABLE agent_tokens (
 
 All inventory tables are scoped to `(cluster_id, snapshot_id)` and are immutable per snapshot cycle.
 
+#### `node_enrichments`
+```sql
+CREATE TABLE node_enrichments (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cluster_id            UUID NOT NULL REFERENCES clusters(id),
+  node_name             TEXT NOT NULL,
+  asg_name              TEXT,
+  lifecycle_state       TEXT,
+  reserved_instance     BOOLEAN DEFAULT false,
+  collected_at          TIMESTAMPTZ DEFAULT now()
+);
+```
+**Owner:** `backend/account_collector`
+**Notes:** Populated via AWS API polling (Phase 4/5). Joined with `nodes` during snapshot assembly.
+
 #### `nodes`
 ```sql
 CREATE TABLE nodes (
@@ -843,6 +858,21 @@ CREATE INDEX event_store_unpublished ON event_store(published, emitted_at) WHERE
 **Owner:** `backend/events`  
 **Notes:** Outbox pattern — events are written here BEFORE being published to NATS. A sweeper job retries unpublished events at-least-once.
 
+#### `itn_events`
+```sql
+CREATE TABLE itn_events (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cluster_id       UUID NOT NULL REFERENCES clusters(id),
+  node_id          UUID,
+  node_name        TEXT NOT NULL,
+  instance_id      TEXT NOT NULL,
+  notice_type      TEXT NOT NULL,             -- 'ITN' | 'REBALANCE_RECOMMENDATION'
+  termination_time TIMESTAMPTZ,
+  detected_at      TIMESTAMPTZ DEFAULT now()
+);
+```
+**Owner:** `backend/itn_handler`
+
 #### `dead_letter_jobs`
 ```sql
 CREATE TABLE dead_letter_jobs (
@@ -904,6 +934,7 @@ Every table has a single owning backend module. Only that module may write to th
 | `clusters` | Onboarding | `backend/onboarding` |
 | `agents` | Agent Management | `backend/agent_management` |
 | `agent_tokens` | Agent Management | `backend/agent_management` |
+| `node_enrichments` | Account Collector | `backend/account_collector` |
 | `nodes` | Cluster Inventory | `backend/cluster_inventory/nodes` |
 | `pods` | Cluster Inventory | `backend/cluster_inventory/pods` |
 | `deployments` | Cluster Inventory | `backend/cluster_inventory/deployments` |
@@ -943,6 +974,7 @@ Every table has a single owning backend module. Only that module may write to th
 | `rollback_snapshots` | Rollback | `backend/rollback` |
 | `audit_logs` | Audit | `backend/audit_logs` |
 | `event_store` | Events | `backend/events` |
+| `itn_events` | Execution | `backend/itn_handler` |
 | `dead_letter_jobs` | Workers | `workers/common` |
 | `notifications` | Notifications | `backend/notifications` |
 

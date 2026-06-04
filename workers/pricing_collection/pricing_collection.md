@@ -10,6 +10,7 @@ AWS pricing refresh job. Maintains an up-to-date catalog of Spot and On-Demand p
 - Runs one task per region in parallel.
 
 ## Inputs
+- Queue: `queue:pricing_collection`
 - Source: Cron schedules.
 - Format: Internal triggers.
 

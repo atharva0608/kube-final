@@ -10,6 +10,7 @@ Recommendation generation and savings estimation job (Final step of Phase 2).
 - Publishes the `cluster.analysed` event to signal the end of Phase 2.
 
 ## Inputs
+- Queue: `queue:recommendations`
 - Source: Internal queue trigger from `workers/eligibility_engine`.
 - Format: Queue payload.
 

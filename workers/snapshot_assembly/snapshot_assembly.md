@@ -11,6 +11,7 @@
 - Publishes the `cluster.collected` event to trigger Phase 2.
 
 ## Inputs
+- Queue: `queue:snapshot_assembly`
 - Source: Internal trigger (agent event—backend receives snapshot POST, triggering this worker).
 - Format: Internal queue message.
 

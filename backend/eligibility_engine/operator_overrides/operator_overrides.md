@@ -1,24 +1,38 @@
-# Backend Eligibility Engine Operator Overrides
+# operator_overrides
 
-## Overview
-`backend/eligibility_engine/operator_overrides` is the documentation entry for the `operator_overrides` module within the BalanceKube repository.
-Operator Overrides support within the placement eligibility rules and override handling.
-This folder is part of the `backend` domain and provides focused behavior for `Operator Overrides`.
+## Purpose
+Applies manual operator placement intents that override automated rules.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `operator_overrides` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Operator Overrides` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Applies `workload_config.placement_intent`.
+- Honors explicit manual blocks or inclusions.
 
-- This leaf module is one part of the `eligibility_engine` domain within `backend`. Related sibling modules include `conditional_rules`, `hard_rules`.
+## Inputs
+- N/A
 
-## Subfolders
-- This module has no further nested subfolders.
+## Outputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/eligibility_engine/eligibility_engine.md` for the parent domain documentation, if available.
+## Events Produced
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Consumed
+- N/A
+
+## Database Tables
+- N/A
+
+## APIs
+- N/A
+
+## Dependencies
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

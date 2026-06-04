@@ -20,7 +20,7 @@ The operator creates an account on BalanceKube. This establishes the multi-tenan
 
 ### Create Organisation
 
-Establishes the tenant boundary in the platform database. Every subsequent table (`clusters`, `workload_config`, `application_group_definitions`, `migration_plans`, `execution_history`) is scoped to this organisation via `customer_id`. Two customers can never access each other's data. The `customer_id` is a UUID, never an integer sequence, to prevent enumeration.
+Establishes the tenant boundary in the platform database. Every subsequent table (`clusters`, `workload_config`, `application_group_definitions`, `execution_history`) is scoped to this organisation via `customer_id`. Two customers can never access each other's data. The `customer_id` is a UUID, never an integer sequence, to prevent enumeration.
 
 ---
 
@@ -757,7 +757,7 @@ Written at the end of E1B. One row per workload, upserted on every cycle. Contai
 Also contains three identity fields that Phase 3 and Phase 4 use to detect stale plans:
 - `snapshot_id` — which assembled_snapshot this analysis was built from.
 - `analysis_version` — increments each cycle. Phase 3 detects stale plans by comparing the version in the plan against the current version.
-- `cluster_hash` — SHA-256 of the cluster topology at analysis time. Inputs to the hash: node inventory, workload inventory, PVC topology, application group definitions. **Not** metrics or replica counts — including those would invalidate plans constantly on minor fluctuations.
+- `cluster_hash` — SHA-256 of the cluster topology at analysis time. Inputs to the hash: node types, counts, and AZ distribution. **Not** workloads, PVCs, or replica counts — including those would invalidate plans constantly on HPA scaling or deployments.
 
 ---
 
@@ -1080,7 +1080,7 @@ For patchable drift: Phase 3 updates the existing plan's parameters in place —
 
 ### Update Existing Plan
 
-`migration_plans` row updated: new `plan_delta_at` timestamp, updated step parameters. No new approval required for minor patches. For moderate patches (step reordering, capacity changes): requires re-acknowledgement but not full re-approval.
+`recommendation_store` row updated: new `plan_delta_at` timestamp, updated step parameters. No new approval required for minor patches. For moderate patches (step reordering, capacity changes): requires re-acknowledgement but not full re-approval.
 
 ---
 
@@ -1201,7 +1201,7 @@ The resource_version of each workload is recorded at plan time for the generatio
 
 **Feasibility checks:**
 - Per-pod instance fit: does this workload fit in at least one Spot instance type from the pool? If no: `INFEASIBLE_NO_INSTANCE_FIT` → fall back to ON_DEMAND, surface to operator.
-- Group total demand vs available capacity: if insufficient → plan includes a `CREATE_KARPENTER_NODECLAIM` step. Not a block — capacity is provisioned first.
+- Group total demand vs available capacity: if insufficient → plan includes a `CREATE_KARPENTER_NODECLAIM` step. **Crucially**, before this step can be executed, Phase 4 checks `clusters.karpenter_control_mode`. If it is `observe`, the engine is blocked from creating NodeClaims and execution halts. It must be `managed` for Phase 4 to provision capacity.
 
 **Global execution ordering:** LOW/MEDIUM criticality groups execute first (lower blast radius on failure). HIGH/CRITICAL groups execute last. Never drain two nodes in the same AZ simultaneously. Groups with no shared drain-candidate nodes run concurrently.
 
@@ -1330,7 +1330,7 @@ The agent reports the final outcome to the backend. The backend writes to `execu
 
 ### Execution History
 
-`migration_plans` and `execution_results` tables form the execution history. Every step's `state_before` and `state_after`, success/failure, error reasons, and verification results are stored. The complete audit trail is always available.
+`execution_history` and `execution_results` tables form the execution history. Every step's `state_before` and `state_after`, success/failure, error reasons, and verification results are stored. The complete audit trail is always available.
 
 ---
 

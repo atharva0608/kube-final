@@ -13,6 +13,7 @@ Resource analysis job (Phase 2 E1B). Profiles workload resource utilization agai
 - Triggers the eligibility engine upon completion.
 
 ## Inputs
+- Queue: `queue:resource_analysis`
 - Source: Internal queue trigger from `workers/workload_classification`.
 - Format: Queue payload.
 

@@ -8,6 +8,7 @@ Periodic cluster inventory refresh job ensuring the platform has the latest view
 - Tells the agent (via the next heartbeat response) to push fresh inventory.
 
 ## Inputs
+- Queue: `queue:cluster_inventory`
 - Source: Cron schedule (every 5 minutes), `cluster.registered` event, `execution.completed` event.
 - Format: Internal queue triggers.
 

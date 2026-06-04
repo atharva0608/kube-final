@@ -11,6 +11,7 @@ Eligibility computation job. Evaluates all hard and conditional rules to determi
 - Triggers the recommendation engine upon completion.
 
 ## Inputs
+- Queue: `queue:eligibility_engine`
 - Source: Internal queue trigger from `workers/resource_analysis`.
 - Format: Queue payload.
 

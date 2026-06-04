@@ -6,7 +6,7 @@ The `workload_review` module manages the review state gate that sits between Pha
 ## Responsibilities
 - On each `cluster.collected` event, determine which workloads require operator review:
   - **First collection cycle**: all workloads enter `pending_review` state — analysis still runs immediately (not blocked), but Phase 3 planning is gated until review is complete
-  - **Subsequent cycles**: only workloads with no `workload_config` row (i.e., never reviewed before) enter `pending_review`; previously confirmed workloads are exempt
+  - **Subsequent cycles**: only workloads with no `workload_config` row (i.e., never reviewed before) enter `pending_review`; previously confirmed workloads are exempt, meaning no `review_items` row is created for them in subsequent cycles (their absence implies auto-confirmed status based on the existing `workload_config`).
 - Create a `workload_reviews` record per review cycle and `review_items` records for each workload requiring review
 - Expose APIs for operators to view pending review items, update workload configuration, and complete a review cycle
 - Accept operator decisions on each workload:
@@ -81,8 +81,9 @@ The `workload_review` module manages the review state gate that sits between Pha
 | Table | Key Columns | Notes |
 |---|---|---|
 | `workload_reviews` | `id UUID PK`, `cluster_id UUID FK`, `snapshot_id UUID FK`, `status VARCHAR` (`pending`/`completed`/`skipped`), `item_count INT`, `pending_count INT`, `completed_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ` | One per collection cycle per cluster. `skipped` when no new workloads require review. |
-| `review_items` | `id UUID PK`, `review_id UUID FK`, `cluster_id UUID FK`, `workload_id VARCHAR`, `workload_name VARCHAR`, `workload_namespace VARCHAR`, `workload_kind VARCHAR`, `auto_detected_type VARCHAR`, `status VARCHAR` (`pending`/`confirmed`/`overridden`), `reviewed_at TIMESTAMPTZ`, `reviewed_by UUID FK→users` | One per workload per review cycle. Status `overridden` when operator changes any field from auto-detected value. |
+| `review_items` | `id UUID PK`, `review_id UUID FK`, `cluster_id UUID FK`, `workload_id VARCHAR`, `workload_name VARCHAR`, `workload_namespace VARCHAR`, `workload_kind VARCHAR`, `auto_detected_type VARCHAR`, `status VARCHAR` (`pending`/`confirmed`/`overridden`), `reviewed_at TIMESTAMPTZ`, `reviewed_by UUID FK→users` | One per workload per review cycle. Only created for workloads requiring review in this cycle. Absence of a row implies auto-confirmed based on prior config. Status `overridden` when operator changes any field from auto-detected value. |
 | `workload_config` | `id UUID PK`, `cluster_id UUID FK`, `workload_id VARCHAR`, `workload_type VARCHAR`, `workload_purpose VARCHAR`, `business_criticality VARCHAR`, `application_group VARCHAR`, `excluded BOOL DEFAULT false`, `review_status VARCHAR` (`pending`/`confirmed`), `review_notes TEXT`, `updated_at TIMESTAMPTZ`, `updated_by UUID FK→users` | Upsert on `(cluster_id, workload_id)`. This is the operator-defined configuration that overrides auto-detection. Once a row exists for a workload, it is exempt from future `pending_review` creation. |
+| `application_group_definitions` | `id UUID PK`, `cluster_id UUID FK`, `name VARCHAR`, `description TEXT`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ` | Defines logical groups for workloads. Assigned via `workload_config.application_group`. |
 
 ### workload_purpose controlled vocabulary
 | Value | Description |
@@ -118,6 +119,10 @@ The `workload_review` module manages the review state gate that sits between Pha
 | `POST` | `/api/v1/clusters/:id/reviews/:review_id/complete` | JWT (ADMIN/MEMBER) | Mark review cycle as completed. Publishes `review.completed` event. Fails with `400` if any items are still in `pending` status (operator must action all items or explicitly confirm them). |
 | `PATCH` | `/api/v1/workloads/:id/config` | JWT (ADMIN/MEMBER) | Upsert workload configuration. Accepts partial updates (only provided fields are changed). Implicitly sets `review_status = confirmed` on the associated `review_items` row. Returns the complete updated `workload_config` object. |
 | `GET` | `/api/v1/clusters/:id/workloads/:workload_id/config` | JWT | Read the current workload config for a specific workload. Returns 404 if not yet reviewed. |
+| `POST` | `/api/v1/clusters/:id/application-groups` | JWT (ADMIN/MEMBER) | Create a new application group definition. |
+| `GET` | `/api/v1/clusters/:id/application-groups` | JWT | List application group definitions for the cluster. |
+| `PUT` | `/api/v1/clusters/:id/application-groups/:group_id` | JWT (ADMIN/MEMBER) | Update an application group definition. |
+| `DELETE` | `/api/v1/clusters/:id/application-groups/:group_id` | JWT (ADMIN/MEMBER) | Delete an application group definition (fails if in use by any `workload_config`). |
 
 ## Dependencies
 

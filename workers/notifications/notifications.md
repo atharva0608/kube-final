@@ -10,6 +10,7 @@ Notification dispatch job. Delivers system alerts to operators via their configu
 - Records delivery status in the `notifications` table.
 
 ## Inputs
+- Queue: `queue:notifications`
 - Source: Notification events (`review.pending`, `drift.detected`, `execution.started`, etc.).
 - Format: Event payloads.
 

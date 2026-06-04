@@ -10,6 +10,7 @@ Rollback execution job. Restores the pre-execution state from a rollback snapsho
 - Marks the execution as rolled back.
 
 ## Inputs
+- Queue: `queue:rollback`
 - Source: `execution.failed` event (internal).
 - Format: Event payload.
 

@@ -11,7 +11,7 @@ Continuously monitors whether the live cluster state remains consistent with the
 - Classify each drift event into one of six drift types: `WORKLOAD_LEVEL`, `NODE_COMPOSITION`, `PLACEMENT_MISMATCH`, `PRICING_SHIFT`, `REPLICA_SPIKE`, `APPLICATION_GROUP_CHANGE`. Track `OWNERSHIP_CONFLICT` separately in `deployment_conflicts` — it never contributes to the drift score.
 - Apply the **PLACEMENT_MISMATCH guard**: only count a pod-on-wrong-lifecycle as a PLACEMENT_MISMATCH drift if (1) the pod has been Running on the wrong node type for > 15 minutes, (2) there is no active rolling update on the workload, and (3) no Spot interruption occurred on that node in the last 10 minutes.
 - Decide PATCHABLE vs NOT PATCHABLE for each drift event and write a `plan_delta` for patchable changes, or trigger Phase 2 re-analysis for non-patchable ones.
-- Update `migration_plans` rows in-place for patchable deltas (updating `plan_delta_at` and step parameters); require re-acknowledgement for moderate patches, no new approval for minor patches.
+- Update `recommendation_store` rows in-place for patchable deltas (updating `plan_delta_at` and step parameters); require re-acknowledgement for moderate patches, no new approval for minor patches.
 - Publish `drift.detected`, `drift.patchable`, or `drift.invalidated` events.
 
 ## Inputs

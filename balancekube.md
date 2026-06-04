@@ -1171,7 +1171,7 @@ Each sub-folder under `backend/` contains a module-level `.md` file (auto-create
 
 ### `backend/agent_management`
 - **Purpose:** Manages agent credentials, heartbeat, and upgrades.
-- **Routes:** `POST /agents/register`, `POST /agents/:id/heartbeat`, `GET /agents/:id/upgrade`
+- **Routes:** `POST /api/v1/agents/register`, `POST /api/v1/agents/:id/heartbeat`, `GET /api/v1/agents/:id/upgrade`
 - **Tables:** `agents`, `agent_tokens`
 
 ### `backend/users` / `backend/organizations`
@@ -1782,10 +1782,10 @@ Purpose:
 | `GET` | `/clusters/:id/executions/:exec_id` | Get execution detail |
 | `POST` | `/clusters/:id/overrides` | Set operator override |
 | `GET` | `/clusters/:id/overrides` | List operator overrides |
-| `POST` | `/agents/register` | Agent registration |
-| `POST` | `/agents/:id/heartbeat` | Agent heartbeat |
-| `POST` | `/agents/:id/metrics` | Agent metrics push |
-| `POST` | `/agents/:id/inventory` | Agent inventory push |
+| `POST` | `/api/v1/agents/register` | Agent registration |
+| `POST` | `/api/v1/agents/:id/heartbeat` | Agent heartbeat |
+| `POST` | `/api/v1/agents/:id/metrics` | Agent metrics push |
+| `POST` | `/api/v1/agents/:id/inventory` | Agent inventory push |
 
 The frontend contract is aligned with backend schemas via shared TypeScript types and API models in `frontend/shared` and `shared/validation`. API endpoints are the single source of truth for UI workflows and are versioned consistently with the backend service.
 
@@ -1948,7 +1948,7 @@ active → upgrading → rollback → active (on failure)
 - Registration is idempotent: if the agent restarts and finds a valid certificate, it skips registration.
 
 ### Heartbeat (`agent/heartbeat`)
-- Agent sends a `POST /agents/:id/heartbeat` every 30 seconds.
+- Agent sends a `POST /api/v1/agents/:id/heartbeat` every 30 seconds.
 - Payload includes: `agent_version`, `cluster_id`, `collection_cycle_count`, `last_error` (if any), node count seen.
 - Platform updates `agents.last_heartbeat_at`.
 - If no heartbeat is received for 90 seconds (3× interval), platform emits `agent.heartbeat_missed` event.
@@ -1959,7 +1959,7 @@ active → upgrading → rollback → active (on failure)
 - Agent certificate is valid for 30 days.
 - `agent/token_rotation` initiates rotation 7 days before expiry.
 - Rotation sequence:
-  1. Agent requests a new certificate from `POST /agents/:id/rotate-token`.
+  1. Agent requests a new certificate from `POST /api/v1/agents/:id/rotate-token`.
   2. Platform issues new certificate signed by platform CA.
   3. Agent stores new certificate, continues using old certificate until new one is confirmed accepted.
   4. Agent sends one heartbeat using new certificate.

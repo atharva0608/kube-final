@@ -9,6 +9,7 @@ Async onboarding jobs triggered by organization creation, handling external inte
 - Initial AWS access validation retry if the first attempt timed out.
 
 ## Inputs
+- Queue: `queue:onboarding`
 - Source: `org.created` event.
 - Format: `OrgCreated` event payload.
 

@@ -10,6 +10,7 @@ Metrics ingestion and aggregation job, processing batched telemetry from agent D
 - Prunes metrics older than 90 days via scheduled cleanup.
 
 ## Inputs
+- Queue: `queue:metrics_collection`
 - Source: Agent push (HTTP POST to backend, placed on queue).
 - Format: `AgentMetricsPush` payload.
 

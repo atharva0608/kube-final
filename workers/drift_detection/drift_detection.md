@@ -10,6 +10,7 @@ Phase 3 drift detection scheduled job. Continuously compares the planned state a
 - Publishes drift events.
 
 ## Inputs
+- Queue: `queue:drift_detection`
 - Source: `cluster.analysed` event (immediate run) + Cron (every 5 mins).
 - Format: Event payload or cron trigger.
 

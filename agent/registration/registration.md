@@ -5,7 +5,7 @@ One-time registration process executed on the agent's very first startup.
 
 ## Responsibilities
 - Exchanges the short-lived `registration_token` for a long-lived mTLS client certificate.
-- POSTs to the backend `POST /api/v1/agent/register` with bearer token.
+- POSTs to the backend `POST /api/v1/agents/register` with bearer token.
 - Stores the newly issued certificate in a Kubernetes Secret within the agent's namespace.
 - Prevents data collection until registration succeeds.
 
@@ -27,7 +27,7 @@ One-time registration process executed on the agent's very first startup.
 - N/A
 
 ## APIs
-- Calls `POST /api/v1/agent/register` (Backend).
+- Calls `POST /api/v1/agents/register` (Backend).
 
 ## Dependencies
 - K8s API (to create Secret).

@@ -1,24 +1,38 @@
-# Backend Drift Detection Plan Delta
+# plan_delta
 
-## Overview
-`backend/drift_detection/plan_delta` is the documentation entry for the `plan_delta` module within the BalanceKube repository.
-Plan Delta support within the drift detection, plan delta generation, and invalidation.
-This folder is part of the `backend` domain and provides focused behavior for `Plan Delta`.
+## Purpose
+Generates patchable deltas for plans when non-structural drift occurs.
 
-## Current folder responsibilities
-- Owns the module-level responsibilities for `plan_delta` in the `backend` domain.
-- Implements the primary behavior and contracts for the `Plan Delta` feature area.
-- Supports the broader `Backend` workflow and integrates with sibling modules in the same domain.
+## Responsibilities
+- Computes diffs between the baseline snapshot and the current snapshot.
+- Writes to `plan_deltas` if changes are patchable.
 
-- This leaf module is one part of the `drift_detection` domain within `backend`. Related sibling modules include `configuration_diff`, `impact_analysis`, `node_diff`, `pod_diff`, `reanalysis`, `resource_diff`, `snapshot_comparator`.
+## Database Tables
+- Writes: `plan_deltas`
 
-## Subfolders
-- This module has no further nested subfolders.
+## Inputs
+- N/A
 
-## Related documentation
-- `balancekube.md` for the overall BalanceKube architecture and domain relationships.
-- `backend/backend.md` for the root of the `backend` domain documentation.
-- `backend/drift_detection/drift_detection.md` for the parent domain documentation, if available.
+## Outputs
+- N/A
 
-## Notes
-- Use this document to describe the folder purpose, submodule summaries, and cross-domain interactions.
+## Events Produced
+- N/A
+
+## Events Consumed
+- N/A
+
+## APIs
+- N/A
+
+## Dependencies
+- N/A
+
+## Configuration
+- N/A
+
+## Error Handling
+- N/A
+
+## Future Enhancements
+- N/A

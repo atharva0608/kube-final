@@ -10,6 +10,7 @@ Tag generation and classification job (Phase 2 E1A). Runs heuristic detectors to
 - Triggers resource analysis upon completion.
 
 ## Inputs
+- Queue: `queue:workload_classification`
 - Source: `cluster.collected` event AND `review.completed` event.
 - Format: Event payloads.
 

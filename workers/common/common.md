@@ -24,7 +24,7 @@ Worker base classes, retry logic, and dead-letter handling. Provides the foundat
 - N/A
 
 ## Database Tables
-- Writes: `dead_letter_jobs` (id, worker, job_payload, error, attempts, created_at) - Owned.
+- Writes: `dead_letter_jobs` (id, worker, job_payload, error, attempts, created_at) - Owned. Acts as a shared sink for both Backend event publish failures and Worker job failures.
 
 ## APIs
 - N/A

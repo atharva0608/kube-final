@@ -13,6 +13,7 @@ Phase 4 execution orchestration job. Drives the actual mutation of the Kubernete
 - Triggers rollback on failure.
 
 ## Inputs
+- Queue: `queue:execution`
 - Source: `recommendation.approved` event.
 - Format: Event payload.
 
