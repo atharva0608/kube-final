@@ -2023,8 +2023,8 @@ Phases have very different latency characteristics: Phase 1 runs every few minut
 ### Why Go for the agent?
 The agent runs inside customer infrastructure and must have a minimal footprint. Go produces a single static binary with no runtime dependencies, which simplifies deployment, upgrade, and security hardening. The `controller-runtime` library provides battle-tested Kubernetes informer patterns that would require significant custom work in Node.js.
 
-### Why no write permissions for the agent?
-The agent runs inside the customer cluster with broad read access to cluster state. Granting it write permissions would expand the blast radius if the agent were compromised. All cluster mutations (drain, placement configuration) are performed from the platform side using the customer's assumed IAM role through the EKS API, which provides a separate, auditable access path.
+### Why bounded write permissions for the agent?
+The agent runs inside the customer cluster and needs to execute actions like draining nodes, creating Karpenter NodeClaims, and applying taints. Granting it full write permissions (e.g. modifying Deployments or StatefulSets) would expand the blast radius if the agent were compromised. Instead, write access is strictly scoped via RBAC to only the APIs necessary for Phase 4 execution (Nodes, Eviction API, NodeClaims). Phase 4 never patches workload specs directly.
 
 ---
 

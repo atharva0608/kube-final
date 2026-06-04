@@ -403,45 +403,45 @@ J -->|Yes| L[Generate Execution Plan]
 
 L --> M[Sign Execution Plan]
 
-M --> N[Send Execution Plan To Agent]
+M --> N[Agent Polls Heartbeat]
 
-N --> O[Agent Validate Plan]
+N --> O[Backend Delivers Execution Plan]
 
-O --> P{Plan Valid?}
+O --> P[Agent Validate Plan]
 
-P -->|No| Q[Reject Execution]
+P --> Q{Plan Valid?}
 
-Q --> K
+Q -->|No| R[Reject Execution]
 
-P -->|Yes| R[Agent Create Rollback Snapshot]
+R --> K
 
-R --> S[Agent Provision Capacity]
+Q -->|Yes| S[Agent Create Rollback Snapshot]
 
-S --> T[Agent Drain Source Nodes]
+S --> T[Agent Provision Capacity]
 
-T --> U[Agent Migrate Workloads]
+T --> U[Agent Drain Source Nodes]
 
-U --> V[Agent Apply Spot Placement]
+U --> V[Agent Migrate Workloads]
 
-V --> W[Agent Health Validation]
+V --> W[Agent Apply Spot Placement]
 
-W --> X{Validation Passed?}
+W --> X[Agent Health Validation]
 
-X -->|Yes| Y[Agent Report Success]
+X --> Y{Validation Passed?}
 
-X -->|No| Z[Agent Trigger Rollback]
+Y -->|Yes| Z[Agent Report Success]
 
-Z --> AA[Restore Rollback Snapshot]
+Y -->|No| AA[Agent Trigger Rollback]
 
-AA --> AB[Recovery Validation]
+AA --> AB[Restore Rollback Snapshot]
 
-AB --> AC[Agent Report Rolled Back]
+AB --> AC[Recovery Validation]
 
-Y --> AD[(Execution History)]
+AC --> AD[Agent Report Rolled Back]
 
-AC --> AD
+Z --> AE[(Execution History)]
 
-AD --> AE[Metrics Feedback]
+AD --> AE
 
 AE --> AF[Phase 1]
 ```

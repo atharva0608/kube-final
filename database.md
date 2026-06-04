@@ -83,23 +83,7 @@ CREATE TABLE api_keys (
 ```
 **Owner:** `backend/users`
 
-#### `notifications`
-```sql
-CREATE TABLE notifications (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id       UUID NOT NULL REFERENCES organizations(id),
-  user_id      UUID REFERENCES users(id),       -- Nullable, if null = org-wide broadcast
-  type         TEXT NOT NULL,                   -- 'info' | 'warning' | 'critical'
-  title        TEXT NOT NULL,
-  message      TEXT NOT NULL,
-  status       TEXT DEFAULT 'unread',           -- ENUM: 'unread' | 'read' | 'dismissed' (Migrated from unread boolean)
-  context      JSONB,                           -- { clusterId, recommendationId, etc }
-  created_at   TIMESTAMPTZ DEFAULT now()
-);
-```
-**Owner:** `backend/notifications`
 
----
 
 ### Cluster Registry Tables
 
@@ -781,6 +765,7 @@ CREATE TABLE execution_history (
   started_at              TIMESTAMPTZ,
   completed_at            TIMESTAMPTZ,
   duration_seconds        INTEGER,
+  trigger                 TEXT NOT NULL DEFAULT 'recommendation_approval', -- 'recommendation_approval' | 'itn_emergency'
   nodes_provisioned       INTEGER DEFAULT 0,
   nodes_drained           INTEGER DEFAULT 0,
   workloads_migrated      INTEGER DEFAULT 0,
@@ -922,13 +907,17 @@ CREATE TABLE dead_letter_jobs (
 #### `notifications`
 ```sql
 CREATE TABLE notifications (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id      UUID NOT NULL REFERENCES organizations(id),
-  type        TEXT NOT NULL,
-  recipient   TEXT,
-  payload     JSONB NOT NULL,
-  sent_at     TIMESTAMPTZ,
-  status      TEXT DEFAULT 'pending'          -- 'pending' | 'sent' | 'failed' | 'dead_lettered'
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id         UUID NOT NULL REFERENCES organizations(id),
+  type           TEXT NOT NULL,                   -- ENUM: 'review.pending' | 'drift.detected' | 'execution.started' | etc.
+  recipient      TEXT,                            -- email address, webhook URL, etc.
+  payload        JSONB NOT NULL,
+  sent_at        TIMESTAMPTZ,
+  read_at        TIMESTAMPTZ,                     -- Set when operator marks as read in UI
+  status         TEXT DEFAULT 'pending',          -- ENUM: 'pending' | 'sent' | 'failed' | 'dead_lettered' | 'no_channel'
+  attempt_count  INTEGER DEFAULT 0,
+  last_error     TEXT,
+  created_at     TIMESTAMPTZ DEFAULT now()
 );
 ```
 **Owner:** `backend/notifications`
