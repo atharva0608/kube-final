@@ -94,6 +94,7 @@ A PostgreSQL trigger is applied to `audit_logs` to `RAISE EXCEPTION` on any `UPD
 |---|---|---|
 | `GET` | `/audit-logs` | Paginated, filterable audit log listing for the authenticated user's organization. Query parameters: `?actor_id=`, `?action=`, `?resource_type=`, `?resource_id=`, `?from=` (ISO 8601 datetime), `?to=` (ISO 8601 datetime), `?limit=` (default 50, max 200), `?cursor=` (opaque cursor for pagination). Returns `{ items: AuditLog[], next_cursor?: string, total_count: number }`. Requires `operator` or `admin` role. |
 
+
 > **Note:** There is no write API. All writes are performed internally by the `shared/audit` library. There is no `PATCH`, `PUT`, or `DELETE` endpoint — mutating or deleting audit records is architecturally prohibited.
 
 ## Shared Audit Library (`shared/audit`)
@@ -126,10 +127,11 @@ All modules use the `shared/audit` library to write audit entries. The library:
 | `AUDIT_LOG_PAGE_SIZE_MAX` | `200` | Maximum page size for `GET /audit-logs`. |
 
 ## Error Handling
-- **Write failure within a transaction:** If the `INSERT INTO audit_logs` fails (e.g., database constraint violation, connection loss), the calling module's transaction is rolled back entirely. The mutation does not complete without an audit record. This is intentional — the audit trail is a hard requirement, not a best-effort side effect.
+- **Write failure within a transaction:** If the `INSERT INTO audit_logs` fails (e.g., database constraint violation, connection loss), the calling module's transaction is rolled back entirely. The mutation does not complete without an audit record. This is intentional — the audit trail is a hard requirement, not a best-effort side effect. When returning HTTP 500 due to audit write failure, the response body includes `{ error: 'AUDIT_WRITE_FAILED', mutation_applied: false }`. This unambiguously tells the caller that the mutation was rolled back and a clean retry is safe.
 - **Write failure for critical actions:** For actions that are deemed critical (e.g., `karpenter_mode.changed`, `user.role_changed`), a write failure is treated as a `500 Internal Server Error` returned to the API caller. The originating request must be retried.
 - **`before`/`after` serialisation error:** If the resource snapshot cannot be serialised to JSON (circular reference, unsupported type), the audit entry is written with `before = null` and/or `after = null` plus a `_serialisation_error: true` flag in the JSONB. The mutation is still committed.
 - **Payload size exceeded:** Payloads larger than `AUDIT_LOG_MAX_PAYLOAD_BYTES` are truncated at the field level (deepest leaf nodes removed first) with `"_truncated": true` added. Structure is preserved; only overflow content is dropped.
+- **Critical action truncation alert:** For action types classified as security-sensitive (`karpenter_mode.changed`, `user.role_changed`, `user.permission_changed`, `cluster.deleted`, `override.created`), if `_truncated: true` is set on the `before` or `after` payload, the audit log module emits an additional NATS event `audit.critical_record_truncated` containing `{ action_type, actor_id, audit_log_id, org_id }`. This event triggers a high-priority notification to all `admin` users in the organization via the notifications module.
 - **Query performance:** The `GET /audit-logs` API uses cursor-based pagination to avoid expensive `OFFSET` scans on large audit log tables. The cursor encodes the `(created_at, id)` pair for deterministic, stable pagination.
 
 ## Compliance Notes

@@ -26,6 +26,7 @@ The `cluster_inventory` module is the persistence and serving layer for all Kube
   clusterId: string;
   collectedAt: string;          // ISO 8601
   schemaVersion: string;        // e.g. "1.4"
+  collectionCycleId: string;    // UUID v4, generated once per collection trigger; reused on retries
   nodes: NodeRecord[];
   pods: PodRecord[];
   deployments: DeploymentRecord[];
@@ -128,6 +129,7 @@ N/A — this module does not publish events. Data written here is consumed by `s
 | `pvcs` | `id`, `snapshot_id (FK)`, `cluster_id`, `name`, `namespace`, `storage_class`, `access_modes TEXT[]`, `capacity_gi`, `phase`, `bound_pod_name`, `bound_zone`, `volume_mode`, `collected_at` | `bound_zone` is critical for rescheduling — zone-locked PVCs block cross-AZ migration |
 | `pdbs` | `id`, `snapshot_id (FK)`, `cluster_id`, `name`, `namespace`, `min_available`, `max_unavailable`, `current_healthy`, `desired_healthy`, `disruptions_allowed`, `selector JSONB`, `collected_at` | |
 | `namespaces` | `id`, `snapshot_id (FK)`, `cluster_id`, `name`, `labels JSONB`, `annotations JSONB`, `phase`, `collected_at` | |
+| `cluster_inventory_tracking` | `id`, `cluster_id`, `collection_cycle_id UUID NOT NULL`, `snapshot_id (FK)`, `inventory_status`, `last_push_at`, `next_push_deadline` | Unique constraint on `(cluster_id, collection_cycle_id)` for idempotency |
 
 ### Tables Read (Cross-Domain, Read-Only)
 | Table | Module | Purpose |
@@ -147,6 +149,8 @@ N/A — this module does not publish events. Data written here is consumed by `s
 | `GET` | `/api/v1/clusters/:id/pvcs` | JWT | List PVCs with zone and access mode metadata. |
 | `GET` | `/api/v1/clusters/:id/pdbs` | JWT | List PDBs with current disruption budget status. |
 | `GET` | `/api/v1/clusters/:id/namespaces` | JWT | List namespaces with labels. |
+
+> **Idempotency (`POST /api/v1/agents/:id/inventory`):** The request must include a `collection_cycle_id` UUID field. This UUID is generated once per collection trigger by the agent and reused on all retry attempts. The server enforces a unique constraint on `(cluster_id, collection_cycle_id)`. On duplicate: if same `collection_cycle_id`, return 200 with existing `snapshot_id`; if different UUID with same node/pod data, treat as a new snapshot normally.
 
 ## Dependencies
 
@@ -179,10 +183,10 @@ None — this module writes only to PostgreSQL and queues a BullMQ job for `snap
 |---|---|
 | Invalid or expired agent token | `401 Unauthorized`; log `INVENTORY_AUTH_FAILED` with agent ID |
 | `InventoryPayload` schema validation failure | `400 Bad Request` with Zod error array; inventory push rejected entirely — no partial writes |
-| `snapshot_id` already exists (duplicate push) | `409 Conflict` with `SNAPSHOT_ALREADY_EXISTS`; agent should generate new UUID on retry |
-| DB transaction failure during insert | Full rollback of all resource tables for this snapshot; `500` returned to agent; agent will retry on next collection cycle |
+| `collection_cycle_id` already exists and matches (idempotent delivery) | Server returns 200 with the existing `snapshot_id`. The agent's original write succeeded but the response was lost. No duplicate snapshot is created. |
+| DB transaction failure during insert | Full rollback of all resource tables for this snapshot; 500 returned to agent; agent retries on next cycle with the SAME `collection_cycle_id`. |
 | `cluster.registered` event handler fails | Logged; inventory status remains in default state; first successful push will self-initialize |
-| Oversized payload (exceeds node/pod limits) | `413 Payload Too Large` with `INVENTORY_TOO_LARGE`; no partial write |
+| Oversized payload (exceeds node/pod limits) | HTTP 413 with body `{ error: 'INVENTORY_LIMIT_EXCEEDED', current_pods: N, current_nodes: N, limit_pods: 50000, limit_nodes: 5000 }`. Agent respects `Retry-After: 1800` header (30 minutes). Operators may contact support to increase limits via `cluster_settings.inventory_max_pods_override` / `cluster_settings.inventory_max_nodes_override` (nullable columns — null = use global env var default). |
 | Missing `snapshot_assembly` BullMQ enqueue | Logged as `SNAPSHOT_ASSEMBLY_ENQUEUE_FAILED`; retry via background reconciliation worker that polls for unassembled snapshots |
 
 ## Future Enhancements

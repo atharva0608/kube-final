@@ -95,7 +95,7 @@ Per-organization channel settings are stored in the `organizations` table (or a 
 | Slack | `slack_webhook_url` | Encrypted AES-256-GCM at rest |
 | Custom webhook | `webhook_url` | Encrypted AES-256-GCM at rest |
 
-If no channel is configured for an organization, the notification is persisted in `notifications` with `status=sent` (no-op) so the audit trail is complete even without delivery.
+If no channel is configured for an organization, the notification is persisted in `notifications` with `status=no_channel` (a distinct ENUM value, not `sent`). `status=sent` exclusively means the notification was delivered to at least one configured channel. Compliance queries filtering by `status=sent` will correctly exclude no-channel records.
 
 ## Retry Strategy
 | Attempt | Delay Before Retry |
@@ -136,9 +136,9 @@ Retry state is tracked via BullMQ's built-in retry mechanism with `attempt_count
 
 ## Error Handling
 - **Email delivery failure (SES/SMTP):** BullMQ retries with exponential backoff (max 5 attempts). `notifications.status` set to `failed` after each attempt; `last_error` updated with provider error message. After 5 failures: `status=dead_lettered`, row written to `dead_letter_jobs`.
-- **Slack webhook 4xx:** If Slack returns 404 (webhook deleted) or 403 (revoked), the notification is immediately dead-lettered without retrying. A `dead_letter_jobs` entry flags the misconfigured webhook URL for operator correction.
+- **Slack webhook 4xx:** A single 404 or 403 from Slack triggers one retry after 60 seconds (it may be a transient Slack API issue). Only a 404 received on **three consecutive attempts** (with 60-second spacing) is treated as a permanent webhook deletion and dead-lettered without further retrying. A `dead_letter_jobs` entry flags the misconfigured webhook URL for operator correction.
 - **Custom webhook timeout:** Treated as a transient failure; retried per the exponential backoff schedule.
-- **No channel configured:** Notification is persisted in `notifications` with `status=sent` and `recipient=none` immediately — no error, no retry. This ensures the audit trail is populated even for unconfigured orgs.
+- **No channel configured:** Notification is persisted in `notifications` with `status=no_channel` and `recipient=none` immediately — no error, no retry. This ensures the audit trail is populated even for unconfigured orgs. **Migration prerequisite:** The `no_channel` value must be added to the `notifications.status` ENUM column via a database migration (`ALTER TYPE notification_status ADD VALUE 'no_channel'`) before deploying code that writes it. Code must be deployed after the migration completes.
 - **Payload serialisation failure:** If the notification payload cannot be serialised to JSON (unexpected type), the job is rejected (not retried) and written to `dead_letter_jobs` with `failure_reason='serialisation_error'`.
 - **Dead-letter inspection:** Operators can query `dead_letter_jobs` filtered by `module=notifications` via the admin API to view and manually re-trigger failed notifications.
 

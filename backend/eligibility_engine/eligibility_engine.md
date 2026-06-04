@@ -81,14 +81,14 @@ Determines per-workload Spot placement eligibility by applying a structured set 
 | `ELIGIBILITY_COND_RISK_THRESHOLD` | `6` | `spot_risk_score` threshold above which a COND-001 warning is emitted. Valid range: 1–10. |
 | `ELIGIBILITY_MEMORY_PRESSURE_PCT` | `80` | Percentage of memory limit above which COND-002 is triggered. Valid range: 50–100. |
 | `ELIGIBILITY_NETWORK_P95_MBPS` | `500` | p95 network throughput (Mbps) above which COND-005 is triggered. Valid range: 100–10000. |
-| `ELIGIBILITY_JAVA_MIN_AGE_DAYS` | `7` | Minimum days of metrics history required for Java workloads before `data_maturity` is considered SUFFICIENT. Default: 7. |
+| `ELIGIBILITY_JAVA_MIN_AGE_DAYS` | `7` | Minimum days of metrics history required for Java workloads before `data_maturity` is considered SUFFICIENT. **This is the shared source of truth for Java maturity** — `resource_analysis` reads this same environment variable rather than hard-coding 7. Default: 7. |
 | `ELIGIBILITY_BATCH_SPIKE_MATURITY_BLOCK` | `true` | When `true`, workloads with `is_batch_spike=true` are blocked due to `data_maturity=INSUFFICIENT`. |
 
 ## Error Handling
 - **Missing analysis data:** If `workload_analysis` or `workload_classifications` rows are absent for a workload, the engine emits `verdict=NOT_ELIGIBLE` with `decision_reasons` containing `{ rule_code: "DATA_MISSING", severity: "ERROR" }` rather than failing the entire batch.
 - **Risk score unavailable:** If `risk_scores` has no row for the required instance type × AZ, HARD-005 and COND-001 are skipped; a `decision_reason` with `rule_code: "RISK_SCORE_UNAVAILABLE"` is added as an informational note.
 - **Database write failure:** Wrapped in a retry (3 attempts, 500ms exponential backoff). If all retries fail, the analysis version is marked `FAILED` in `assembled_snapshots` and the error is logged with full context for manual inspection.
-- **Override conflict:** If an `operator_override` row has conflicting `spot_eligible=true` alongside a HARD-001 or HARD-002 hard-block, the hard-block always wins; the override is recorded in `decision_reasons` but overridden by the hard rule with explicit notation.
+- **Override vs hard-block priority:** Hard blocks HARD-001 (database), HARD-002 (PVC no PDB), HARD-004 (PDB zero disruptions), and HARD-009 (DaemonSet) **cannot be overridden** even with `spot_eligible=true`. These blocks prevent data loss or unrecoverable cluster state. When an operator's `spot_eligible=true` override conflicts with one of these hard blocks, the verdict remains `NOT_ELIGIBLE`, the hard block rule code appears first in `decision_reasons`, and an additional reason is appended: `{ rule_code: 'OVERRIDE_DENIED', severity: 'INFO', message: 'This hard block cannot be overridden. To resolve: [specific remediation action for this rule].' }`. HARD-003 (single replica no HPA), HARD-005 (high risk stateful), HARD-007 (throttled), and HARD-008 (insufficient data) **CAN** be bypassed by an explicit `spot_eligible=true` override — operators accept responsibility for the risk.
 - **Dead-letter:** Analysis batch failures are recorded in `dead_letter_jobs` with `module=eligibility_engine` for operator review.
 
 ## Hard-Block Rules Reference

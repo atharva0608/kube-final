@@ -66,6 +66,8 @@ The `karpenter_control_mode` field is the platform's primary safety gate for Pha
 
 Setting `karpenter_control_mode = 'managed'` is logged as a high-priority `audit_logs` entry with `before` and `after` snapshots.
 
+**Idempotency:** The `PATCH /orgs/:id` endpoint for `karpenter_control_mode` is idempotent. If the current value already equals the requested value, the write is skipped and no audit log event is written. Only actual state transitions (e.g., `observe` → `managed`) generate audit events. This prevents duplicate `karpenter_mode.changed` audit entries from network retries.
+
 ## AWS ExternalId Design
 The `external_id` field is a randomly-generated UUID stored in `organizations.external_id`. It is provided to customers during onboarding to include in their IAM trust policy as the `ExternalId` condition:
 

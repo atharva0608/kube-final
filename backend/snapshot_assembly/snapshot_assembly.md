@@ -10,12 +10,12 @@ The `snapshot_assembly` module combines all Phase 1 data sources — Kubernetes 
   - **Layer 3** (Account Collector): node enrichment data from platform-side AWS account polling (instance lifecycle, AZ topology, managed node group membership)
   - **Layer 1** (Platform Cache): current on-demand and spot pricing from Redis / `pricing_collection` tables; spot risk scores from Redis / `spot_risk_collection` tables
 - Use LEFT JOINs for enrichment — assembly never blocks if Layer 3 enrichment is delayed or unavailable
-- Compute a `cluster_hash` (SHA-256 of node instance types + counts + AZ distribution) that uniquely identifies the cluster topology
+- Compute a `cluster_hash` (`SHA-256(sorted set of distinct instance_type × AZ pairs)`). Node counts are deliberately excluded — a count change without an instance type or AZ change does not change the hash and is handled as PATCHABLE drift. This prevents every Karpenter HPA-driven scale-out from invalidating a pending plan.
 - Assign an immutable `snapshot_id` (UUID v4), `assembly_version`, and `schema_version` to every assembled snapshot
 - Write the completed blob to `assembled_snapshots` as a JSONB payload
 - Publish the `cluster.collected` event to trigger downstream Phase 2 processing
 - Enforce the hard rule: no Phase 2/3/4 module queries `nodes`, `pods`, `deployments`, etc. directly — all reads go through `assembled_snapshots`
-- Prune `assembled_snapshots` rows older than 7 days
+- Prune `assembled_snapshots` rows older than 7 days, with a guard: rows referenced by an active execution or pending approval are never pruned regardless of age. Query used: `DELETE FROM assembled_snapshots WHERE created_at < NOW() - INTERVAL '7 days' AND id NOT IN (SELECT snapshot_id FROM recommendation_store WHERE status IN ('approved', 'executing'))`.
 
 ## Inputs
 
@@ -52,7 +52,7 @@ The `assembled_snapshots.payload` JSONB field contains:
   assembled_at: string;          // ISO 8601 — when assembly completed
   schema_version: string;        // e.g. "2.1"
   assembly_version: string;      // e.g. "1.3.0" (BalanceKube release version)
-  cluster_hash: string;          // SHA-256 of topology signature
+  cluster_hash: string;          // SHA-256 of sorted set of distinct (instance_type, az) pairs — v2 format. Does not include node counts.
 
   kubernetes: {
     nodes: AssembledNode[];
@@ -134,7 +134,7 @@ The `assembled_snapshots.payload` JSONB field contains:
 ### cluster_hash Computation
 ```
 cluster_hash = SHA-256(
-  sorted array of (instance_type × count per AZ)
+  sorted array of distinct (instance_type × AZ pairs)
 )
 ```
 A change in `cluster_hash` between two consecutive snapshots means a topology change occurred. This triggers `drift.detected` and invalidates all stale recommendations.
@@ -229,7 +229,7 @@ N/A — snapshot assembly is an internal worker process triggered by BullMQ. It 
 
 | Scenario | Behavior |
 |---|---|
-| Enrichment data absent for a node | LEFT JOIN returns null enrichment fields for that node; assembly proceeds. `enrichment_coverage_percent` reflects the gap. Not a failure. |
+| Enrichment data absent for a node | LEFT JOIN returns null enrichment fields for that node; assembly proceeds. `enrichment_coverage_percent` reflects the gap. Not a failure. **Enrichment null handling (account_collector not yet deployed):** All Phase 2 engines that consume enrichment fields from assembled snapshots treat null enrichment fields as 'unknown' rather than as a blocking signal. Specifically: `instance_lifecycle=null` is treated as `on-demand` (conservative assumption). `asg_name=null` and `managed_node_group_name=null` are surfaced as informational gaps, not eligibility blocks. The operator dashboard displays `enrichment_coverage_percent` prominently with a note when it is below 50%: 'AWS enrichment data is limited. Some Spot savings estimates may be less accurate.' Phase 2 analysis proceeds normally with null enrichment — it is not a pipeline blocker. |
 | Redis miss for pricing or risk | Fall back to direct DB query. If DB also misses (e.g., brand new region), write null pricing/risk for that instance type. Assembly proceeds. |
 | DB write of `assembled_snapshots` fails | Retry 3× with exponential backoff. On persistent failure, log `ASSEMBLY_WRITE_FAILED`; create dead-letter job; `cluster.collected` is NOT published for this cycle. Agent will push again on next collection cycle. |
 | `cluster.collected` NATS publish fails | Outbox pattern: the event is persisted to `event_store` during the same transaction as the snapshot insert. A reconciliation worker replays un-published events within 30 seconds. |

@@ -757,7 +757,7 @@ Written at the end of E1B. One row per workload, upserted on every cycle. Contai
 Also contains three identity fields that Phase 3 and Phase 4 use to detect stale plans:
 - `snapshot_id` — which assembled_snapshot this analysis was built from.
 - `analysis_version` — increments each cycle. Phase 3 detects stale plans by comparing the version in the plan against the current version.
-- `cluster_hash` — SHA-256 of the cluster topology at analysis time. Inputs to the hash: node types, counts, and AZ distribution. **Not** workloads, PVCs, or replica counts — including those would invalidate plans constantly on HPA scaling or deployments.
+- `cluster_hash` — SHA-256 of the cluster topology at analysis time. Inputs to the hash: sorted set of distinct instance_type × AZ pairs. **Not** node counts, workloads, PVCs, or replica counts — including those would invalidate plans constantly on HPA scaling or deployments.
 
 ---
 
@@ -1188,7 +1188,7 @@ If any field mismatches: the plan is stale. Return to Phase 3. Phase 3 re-evalua
 
 Phase 4 generates node-side steps only. Step types: `VERIFY_NODE_CAPACITY`, `CREATE_KARPENTER_NODECLAIM` (conditional), `APPLY_NODE_LABELS`, `APPLY_NODE_TAINT`, `DRAIN_SOURCE_NODE`, `DRAIN_STATEFUL_REPLICA`, `UNCORDON_NODE`, `VERIFICATION`.
 
-The resource_version of each workload is recorded at plan time for the generation recheck (E6.5) between approval and execution. This detects any post-approval deployment before execution begins.
+The resource_version of each workload is extracted from the assembled snapshot payload at approval time and recorded for the generation recheck (E6.5) between approval and execution. This detects any post-approval deployment before execution begins without requiring live Kubernetes API calls.
 
 **Intent resolution (priority order, first match wins):**
 1. `workload_config.placement_intent` set by operator — highest priority
@@ -1217,7 +1217,7 @@ The execution plan is signed with an HMAC before being sent to the execution age
 
 ### Send Execution Plan To Agent
 
-The signed plan is delivered to the Agent Controller. The agent does not poll for plans — the backend pushes them over a persistent connection established at agent registration time.
+The signed plan is delivered to the Agent Controller. The agent polls for plans — the backend delivers them via the instructions array in the heartbeat HTTP response.
 
 ---
 

@@ -83,6 +83,22 @@ CREATE TABLE api_keys (
 ```
 **Owner:** `backend/users`
 
+#### `notifications`
+```sql
+CREATE TABLE notifications (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id       UUID NOT NULL REFERENCES organizations(id),
+  user_id      UUID REFERENCES users(id),       -- Nullable, if null = org-wide broadcast
+  type         TEXT NOT NULL,                   -- 'info' | 'warning' | 'critical'
+  title        TEXT NOT NULL,
+  message      TEXT NOT NULL,
+  status       TEXT DEFAULT 'unread',           -- ENUM: 'unread' | 'read' | 'dismissed' (Migrated from unread boolean)
+  context      JSONB,                           -- { clusterId, recommendationId, etc }
+  created_at   TIMESTAMPTZ DEFAULT now()
+);
+```
+**Owner:** `backend/notifications`
+
 ---
 
 ### Cluster Registry Tables
@@ -96,7 +112,7 @@ CREATE TABLE clusters (
   region                 TEXT NOT NULL,
   k8s_version            TEXT,
   cluster_arn            TEXT UNIQUE,           -- Globally unique EKS ARN
-  cluster_hash           TEXT,                  -- sha256(node_types+counts+az_distribution)
+  cluster_hash           TEXT,                  -- sha256(sorted set of distinct instance_type × az pairs)
   status                 TEXT DEFAULT 'pending', -- 'pending' | 'active' | 'degraded' | 'unreachable' | 'inactive'
   onboarding_status      TEXT DEFAULT 'pending', -- 'pending' | 'in_progress' | 'complete'
   connection_status      TEXT DEFAULT 'pending', -- 'pending' | 'connected'
@@ -505,7 +521,7 @@ CREATE TABLE spot_risk_history (
 CREATE TABLE assembled_snapshots (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cluster_id       UUID NOT NULL REFERENCES clusters(id),
-  cluster_hash     TEXT NOT NULL,           -- sha256(node_types+counts+az_distribution)
+  cluster_hash     TEXT NOT NULL,           -- sha256(sorted set of distinct instance_type × az pairs)
   assembly_version INTEGER NOT NULL DEFAULT 1,
   schema_version   INTEGER NOT NULL DEFAULT 1,
   payload          JSONB,                   -- full snapshot if < threshold
@@ -546,7 +562,7 @@ CREATE TABLE review_items (
   owner_kind   TEXT,
   owner_name   TEXT,
   detected_type TEXT,
-  status       TEXT DEFAULT 'pending',     -- 'pending' | 'confirmed' | 'overridden'
+  status       TEXT DEFAULT 'pending',     -- 'pending' | 'confirmed' | 'overridden' | 'skipped'
   created_at   TIMESTAMPTZ DEFAULT now()
 );
 ```
@@ -569,6 +585,8 @@ CREATE TABLE workload_config (
   updated_at            TIMESTAMPTZ DEFAULT now(),
   UNIQUE(cluster_id, workload_id)
 );
+CREATE INDEX workload_config_lookup ON workload_config(cluster_id, workload_id);
+-- Note: Migration required to add workload_config_lookup index for Phase 3 planning fast path.
 ```
 **Owner:** `backend/workload_review`
 
@@ -790,6 +808,21 @@ CREATE TABLE execution_results (
 );
 ```
 **Owner:** `backend/execution/execution_history`
+
+#### `itn_events`
+```sql
+CREATE TABLE itn_events (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cluster_id       UUID NOT NULL REFERENCES clusters(id),
+  node_id          UUID NOT NULL,
+  node_name        TEXT NOT NULL,
+  instance_id      TEXT NOT NULL,
+  notice_type      TEXT NOT NULL,              -- 'termination' | 'rebalance'
+  termination_time TIMESTAMPTZ,
+  detected_at      TIMESTAMPTZ DEFAULT now()
+);
+```
+**Owner:** `backend/itn_handler`
 
 #### `execution_locks`
 ```sql

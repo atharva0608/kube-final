@@ -9,9 +9,9 @@ The `resource_analysis` module implements Phase 2 Engine 1B: per-workload resour
 - Classify memory utilization into one of three states: `OVER_PROVISIONED`, `RIGHT_SIZED`, `UNDER_PROVISIONED` (no THROTTLED — memory failures manifest as OOMKills instead)
 - Detect network-intensive workloads (cross-node/cross-AZ traffic > 100 Mbps P95) and flag them as candidates for network-optimized instance types
 - Analyze PVC-bound workloads for IOPS and throughput patterns; flag high-IOPS workloads for local NVMe or io1/io2 volume types
-- Detect Java workloads via image name and environment variable scanning; apply a 7-day data maturity hold to Java workloads due to JVM warmup effects
+- Detect Java workloads via image name and environment variable scanning; apply a data maturity hold to Java workloads due to JVM warmup effects — the hold duration is `ELIGIBILITY_JAVA_MIN_AGE_DAYS` days (default: 7), read from the shared environment variable
 - Detect batch spike patterns (`is_batch_spike = true`) when current replicas ≥ 3× P50 replica count over 7 days
-- Enforce data maturity gates: minimum 7 days of metric history required for reliable analysis; Java workloads held at `SUFFICIENT` maturity until 7 full days of post-warmup data are available
+- Enforce data maturity gates: minimum 7 days of metric history required for reliable analysis; Java workloads held at `SUFFICIENT` maturity until `ELIGIBILITY_JAVA_MIN_AGE_DAYS` full days of post-warmup data are available (default: 7)
 - Write per-workload analysis results to `workload_analysis` as JSONB sub-documents for each resource dimension
 
 ## Inputs
@@ -33,7 +33,7 @@ The `resource_analysis` module implements Phase 2 Engine 1B: per-workload resour
 Before computing P95 values, query the minimum `collected_at` timestamp for each workload's metric rows:
 - If `(NOW() - min_collected_at) < 7 days` → `data_maturity = INSUFFICIENT`; analysis still written but all states set to `UNKNOWN`
 - If `≥ 7 days` → `data_maturity = SUFFICIENT`
-- For Java workloads: even if 7 days of data exist, check if the earliest 24 hours of readings show JVM startup ramp (CPU > 2× baseline for first 2 hours); if so, exclude the first 24 hours from P95 computation
+- For Java workloads: Java workloads require a minimum of `ELIGIBILITY_JAVA_MIN_AGE_DAYS` days of metrics history (default: 7) before `data_maturity` is considered SUFFICIENT. This threshold is read from the shared environment variable controlled by the eligibility engine — resource_analysis never hard-codes this value. This ensures both modules stay aligned: changing `ELIGIBILITY_JAVA_MIN_AGE_DAYS` in one place affects both the resource profiling maturity check and the eligibility verdict. Even once the maturity threshold is met, check if the earliest 24 hours of readings show JVM startup ramp (CPU > 2× baseline for first 2 hours); if so, exclude the first 24 hours from P95 computation.
 
 ## Outputs
 

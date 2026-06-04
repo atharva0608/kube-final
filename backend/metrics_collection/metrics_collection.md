@@ -16,6 +16,7 @@ The `metrics_collection` module ingests, normalizes, and stores time-series reso
 - Compute and cache rolling P50 and P95 percentile values over a 7-day sliding window for downstream consumption by `resource_analysis`
 - Serve metric history to the frontend for workload utilization visualization
 - Handle the sub-modules: `kubelet_metrics`, `metrics_server`, `cpu`, `memory`, `network`, `filesystem`, `normalization`
+- **Serialised percentile computation:** The metrics collection worker aggregates all raw metric rows for a workload across all node batches within a collection cycle **before** computing percentiles. Percentile computation (P50, P95) is a single serialised write per workload, executed after all raw metrics for that collection cycle are ingested. A `SELECT FOR UPDATE` on the existing `workload_profiles` row is acquired before any upsert to prevent concurrent modification from parallel worker instances processing simultaneous node batches. This prevents the last-write-wins race condition that would occur if two concurrent upserts for the same `(cluster_id, workload_id)` silently discarded each other's percentile updates.
 
 ## Inputs
 

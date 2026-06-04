@@ -66,7 +66,7 @@ BalanceKube is an automated Kubernetes cost-optimisation and workload placement 
 - **Immutable snapshots** — assembled snapshots are never mutated after assembly; drift detection works by comparing a new current snapshot against the stored planned snapshot.
 - **Event-driven pipeline** — phases communicate exclusively through domain events (`cluster.collected`, `cluster.analysed`), not direct function calls, enabling retry and replay.
 - **Stable event contracts** — every domain event has a versioned payload schema and a standard envelope. Consumers use `schema_version` and tolerate unknown extra fields to support safe evolution.
-- **Consistency through hashing** — `cluster_hash` is derived from the stable topology (node types, counts, AZ distribution) so any structural change invalidates stale recommendations automatically.
+- **Consistency through hashing** — `cluster_hash` is derived from the stable topology (sorted set of distinct instance_type × AZ pairs) so any structural change invalidates stale recommendations automatically.
 
 ---
 
@@ -587,7 +587,7 @@ assembled_snapshot {
   metrics:           { cpu{}, memory{}, network{}, filesystem{} }
   pricing:           { on_demand{}, spot{}, instance_catalog{} }
   spot_risk:         { risk_scores{}, historical_dataset_ref }
-  cluster_hash:      sha256(node_types + node_counts + az_distribution)
+  cluster_hash:      sha256(sorted set of distinct instance_type × AZ pairs)
   assembly_version:  integer
 }
 ```

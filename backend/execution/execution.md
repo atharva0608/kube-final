@@ -7,11 +7,13 @@ Orchestrates safe, reversible Spot node provisioning and workload migration for 
 - Consume `recommendation.approved` events and verify pre-conditions before any cluster changes begin.
 - Acquire a per-cluster **execution lock** (`execution_locks` table) to prevent concurrent execution runs.
 - Validate the **3-part plan identity** (`snapshot_id`, `analysis_version`, `cluster_hash`); abort and return to Phase 3 if any component mismatches.
+- **E6.5 resource_version recheck:** Immediately before generating the execution plan (after the 3-part plan identity check passes), Phase 4 reads the `workload_resource_versions` JSONB from `recommendation_store` (captured at approval time from the assembled snapshot — never via a live K8s API call) and compares each workload's stored `resourceVersion` against the `resourceVersion` in the most recent assembled snapshot for the cluster. If any workload's `resourceVersion` has changed, it indicates a post-approval deployment or rollout occurred. Phase 4 aborts execution for that workload's group with `failure_reason='post_approval_deployment_detected'` and surfaces it to the operator. Other groups not affected by the changed workload proceed normally.
 - Resolve **intent** for each workload using a strict priority order: `workload_config.placement_intent` → application group (operator-manual) → application group (template pattern) → developer `nodeAffinity` (read-only) → `topologySpreadConstraints` (read-only) → PVC zone binding → `node_selector`/`tolerations` (read-only).
 - Determine global execution order: LOW/MEDIUM criticality groups first; never drain two nodes in the same AZ simultaneously; groups with no shared drain candidates run concurrently.
 - Build and **HMAC-sign** the execution plan before dispatching to the agent; agent verifies the signature before acting.
 - Execute each step type: `VERIFY_NODE_CAPACITY`, `CREATE_KARPENTER_NODECLAIM`, `APPLY_NODE_LABELS`, `APPLY_NODE_TAINT`, `DRAIN_SOURCE_NODE`, `DRAIN_STATEFUL_REPLICA`, `UNCORDON_NODE`, `VERIFICATION`.
 - Support three execution modes: `OBSERVE` (dry-run, no cluster changes), `PLAN_ONLY` (build plan, notify, await manual trigger), `PLAN_AND_EXECUTE` (full automated execution after approval).
+- **ITN_EMERGENCY mode:** Triggered by `cluster.itn_received` event (not `recommendation.approved`). No recommendation approval is required — the ITN is treated as implicit pre-authorization. Scope is limited to the single terminating node only. Pre-drain steps: lightweight node-only rollback snapshot capture (captures only the terminating node's labels, taints, and pod list — not the full cluster state — to minimise pre-drain latency), lock acquisition. Steps: `APPLY_NODE_TAINT` (NoSchedule on terminating node) → `CREATE_KARPENTER_NODECLAIM` (only if `karpenter_control_mode=managed` AND no spare capacity) → `DRAIN_SOURCE_NODE` → `VERIFICATION` (pods rescheduled). If `karpenter_control_mode=observe`, no capacity is provisioned — pods reschedule onto existing headroom only. Writes to `execution_history` with `trigger=itn_emergency`. **Best-effort timing:** Pre-drain overhead is typically 8–11 seconds on a healthy system (BullMQ pickup: 1-5s, lock: <1s, snapshot: 2-5s). On heavily loaded systems, this may reach 20-30 seconds. If the 2-minute AWS termination window expires before all pods are evicted, evacuation is aborted and remaining pods are annotated with `balancekube.io/itn-incomplete=true` for operator visibility. This annotation is for audit only — AWS terminates the node regardless.
 - Invoke the rollback module on any step failure or health validation failure.
 - Write all outcomes to `execution_history` and publish `execution.started` / `execution.completed` events.
 
@@ -94,7 +96,7 @@ Orchestrates safe, reversible Spot node provisioning and workload migration for 
 ## Execution Step Reference
 | Step Type | Description |
 |---|---|
-| `VERIFY_NODE_CAPACITY` | Confirms sufficient node capacity exists for workload migration before any disruptive action. |
+| `VERIFY_NODE_CAPACITY` | Confirms sufficient node capacity exists for workload migration before any disruptive action. **NodeClaim exemption:** Because `cluster_hash` is now computed from the *set of distinct instance_type × AZ pairs* (not node counts), provisioning a new NodeClaim of an existing instance type in an existing AZ does not change the hash. `VERIFY_NODE_CAPACITY` can safely verify capacity after `CREATE_KARPENTER_NODECLAIM` without triggering a spurious hash mismatch. |
 | `CREATE_KARPENTER_NODECLAIM` | Issues a Karpenter `NodeClaim` for the target Spot instance type. Only when `karpenter_control_mode = 'managed'`. Polls every 10s, timeout 120s. 20% CPU/memory buffer applied to node sizing. |
 | `APPLY_NODE_LABELS` | Applies BalanceKube-managed labels to newly provisioned Spot nodes for scheduling guidance. |
 | `APPLY_NODE_TAINT` | Taints source On-Demand nodes to prevent new pods from scheduling there. |
@@ -110,6 +112,8 @@ Orchestrates safe, reversible Spot node provisioning and workload migration for 
 | `ON_DEMAND` (HIGH/CRITICAL criticality) | Zero pods on Spot nodes. |
 | `MIXED` | 40–90% of pods on Spot. |
 | `StatefulSet` | All replicas Ready; none Pending > 5 minutes. |
+
+> **Partial placement anomaly tracking:** After health validation passes, Phase 4 compares the actual placement outcome to the planned placement for each workload. Pods that landed on the wrong lifecycle (e.g., on OD when Spot was planned) are recorded as `placement_anomalies` in `execution_history.placement_anomaly_details` (JSONB array). The execution is marked `success` but the reported `savings_realised_monthly` is adjusted to reflect only pods that achieved their target lifecycle. Operators can view placement anomalies via `GET /clusters/:id/executions/:exec_id` and trigger a targeted re-execution for affected workloads.
 
 ## Intent Resolution Priority Order
 1. `workload_config.placement_intent` (BalanceKube-managed, highest priority)
@@ -143,6 +147,7 @@ Orchestrates safe, reversible Spot node provisioning and workload migration for 
 - **shared/db** — PostgreSQL client; all step state transitions are transactional.
 - **shared/logger** — structured logging with `execution_id`, `cluster_id`, `step_type` context on every line.
 - **shared/crypto** — HMAC-SHA256 signing of execution plans sent to agent.
+- **Lock source of truth:** PostgreSQL `execution_locks` is the authoritative source of truth for execution lock state. Redis `SET NX EX cluster:{cluster_id}:exec_lock` is a performance optimisation — a fast pre-check before the PostgreSQL query. Lock validity is always confirmed against `execution_locks` before proceeding. The Redis lock is never the final arbiter. If Redis is evicted and the key disappears while the execution is running, the execution's next lock renewal detects the missing Redis key and re-sets it from the PostgreSQL `execution_locks` row. If the PostgreSQL row shows a different `execution_id` than the current process, the current process self-aborts with `failure_reason='lock_stolen'`.
 
 ## Configuration
 | Environment Variable | Default | Description |
@@ -156,6 +161,7 @@ Orchestrates safe, reversible Spot node provisioning and workload migration for 
 | `DRAIN_PDB_MAX_RETRIES` | `10` | Maximum PDB retry attempts before aborting drain. |
 | `HEALTH_VALIDATION_WINDOW_MINUTES` | `10` | Window in which health thresholds must be met post-migration. |
 | `EXECUTION_LOCK_TTL_HOURS` | `2` | TTL for `execution_locks` record; auto-expires if process crashes. |
+| `EXECUTION_LOCK_RENEWAL_INTERVAL_SECONDS` | `600` | How often the active execution renews its lock TTL (seconds). |
 | `MAX_CONCURRENT_DRAIN_AZ` | `1` | Maximum number of AZs from which nodes can be drained simultaneously. |
 | `NODE_CAPACITY_BUFFER_PCT` | `20` | Buffer percentage applied to CPU/memory when sizing NodeClaims. |
 | `HMAC_SECRET_KEY` | *(required)* | Secret key used for HMAC-SHA256 signing of execution plans. Must be set; no default. |
@@ -163,10 +169,12 @@ Orchestrates safe, reversible Spot node provisioning and workload migration for 
 ## Error Handling
 - **Plan identity mismatch:** Execution aborted immediately; `execution_history` marked `aborted`; operator notified via `execution.completed` event with `status=aborted` and `failure_reason='plan_identity_mismatch'`.
 - **Lock already held:** If `execution_locks` row exists and is not expired, the new execution request is rejected with HTTP 409. Stale locks (past `expires_at`) are force-released.
+- **Lock heartbeat renewal:** The running execution renews its Redis lock TTL and updates `execution_locks.expires_at` every `EXECUTION_LOCK_RENEWAL_INTERVAL_SECONDS` (default: 600 — 10 minutes). On each renewal, it writes the current step to `execution_history.current_step` and verifies that its own `execution_id` still matches `execution_locks.execution_id`. If the PostgreSQL row shows a different `execution_id` (indicating a lock expiry-and-reacquire race), the original execution self-aborts immediately (`status=aborted, failure_reason='lock_lost'`). The process that acquired the lock then detects the partially-applied state via the pre-execution snapshot and triggers rollback.
 - **NodeClaim timeout:** Rollback triggered; node is un-tainted; `execution_history` updated with `failure_reason='nodeclaim_timeout'`.
 - **Drain failure after max retries:** `UNCORDON_NODE` runs immediately; rollback triggered for all previously completed steps.
 - **Health validation failure:** Rollback triggered; verification results stored in `execution_history.failure_reason` as structured JSON; operator notified.
 - **Agent unreachable:** Execution is paused (not failed) for up to 5 minutes while awaiting agent reconnect. After 5 minutes, execution is aborted and rollback triggered.
+- **Crash recovery on BullMQ retry:** When the BullMQ execution job is retried after a crash, it performs a pre-flight audit before any new steps: reads `execution_history.current_step` to determine how far execution progressed, then queries live cluster state for any nodes annotated with `balancekube.io/execution-id: {this_execution_id}` that remain in `cordoned` state without a subsequent successful drain record. All such nodes are immediately uncordoned, their steps marked `FAILED_RECOVERED`, and execution resumes from the last safe checkpoint.
 - **NATS publish failure:** `execution.completed` written to `event_store` for deferred delivery with at-least-once guarantee.
 
 ## Future Enhancements

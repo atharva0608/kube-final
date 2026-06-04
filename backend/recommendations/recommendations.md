@@ -14,6 +14,7 @@ Acts as the final step of Phase 2 Workload Intelligence by assembling per-worklo
 - Manage the **recommendation status lifecycle**: `generated → pending_approval → approved → execution_ready → executing → success / rolled_back`.
 - Expose APIs for operators to view and approve recommendations.
 - Publish `cluster.analysed` after all writes are committed.
+- **Capture `workload_resource_versions` at approval time:** when the operator calls `POST /recommendations/:id/approve`, the backend reads the `assembled_snapshots.payload.kubernetes` for the recommendation's `snapshot_id` and extracts the `resourceVersion` of each eligible workload. These are stored in `recommendation_store.workload_resource_versions` (JSONB). This population happens entirely from the snapshot payload — never via a live Kubernetes API call. Phase 4's E6.5 recheck then compares these stored values against the agent's most recent inventory push.
 
 ## Inputs
 - **Source:** `eligibility_verdicts` table — verdict per workload, filtered to `ELIGIBLE` / `ELIGIBLE_WITH_CONDITIONS`.
@@ -89,7 +90,7 @@ Acts as the final step of Phase 2 Workload Intelligence by assembling per-worklo
 | `PRICING_FRESHNESS_MAX_AGE_MINUTES` | `60` | Maximum age (minutes) of `spot_prices.captured_at` before `pricing_freshness = 'STALE_PRICING'` is flagged. |
 | `SAVINGS_OD_HOURS_PER_MONTH` | `720` | Hours per month used in OD cost baseline: `24 × 30`. Adjustable for regions with different billing periods. |
 | `SAVINGS_BUFFER_PERCENT` | `0` | Optional buffer percentage applied to Spot cost estimate for conservative display. Default 0 (no buffer). |
-| `RECOMMENDATION_AUTO_APPROVE` | `false` | If `true`, recommendations are automatically transitioned to `approved` without operator action. **Only for dev/test environments.** |
+| `RECOMMENDATION_AUTO_APPROVE` | `false` | If `true`, recommendations are automatically transitioned to `approved` without operator action. **Only for dev/test environments.** The backend enforces this: if `NODE_ENV=production` AND `RECOMMENDATION_AUTO_APPROVE=true`, the server refuses to start with a fatal error: `FATAL: RECOMMENDATION_AUTO_APPROVE is not permitted in production environments.` When auto-approve is active, it also skips the E6.5 resource_version recheck and the drift check between generation and approval. |
 | `NATS_CLUSTER_ANALYSED_TOPIC` | `cluster.analysed` | NATS topic on which `cluster.analysed` is published. |
 
 ## Error Handling
@@ -99,6 +100,7 @@ Acts as the final step of Phase 2 Workload Intelligence by assembling per-worklo
 - **Pricing table completely empty:** If `spot_prices` is entirely absent (e.g., first boot), the recommendation job is retried with exponential backoff (max 5 attempts, starting at 30s). After 5 failures it is dead-lettered in `dead_letter_jobs`.
 - **`review.completed` event lost:** The recommendations worker is idempotent — re-processing the same `(cluster_id, analysis_version)` is safe. Duplicate `cluster.analysed` events are deduplicated downstream by `drift_detection` using `snapshot_id`.
 - **Approval race condition:** The `approve` endpoint uses a PostgreSQL `SELECT FOR UPDATE` on `recommendation_store` to prevent double-approval if two operators submit simultaneously.
+- **Stale approval guard (newer recommendation exists):** When the approval endpoint transitions a recommendation to `approved`, it validates that no newer recommendation exists for the same cluster (`WHERE cluster_id = $1 AND status = 'pending_approval' AND created_at > $recommendation.created_at`). If a newer recommendation exists, the approval fails with HTTP 409 `{ error: 'NEWER_RECOMMENDATION_EXISTS', newer_id: '...', newer_created_at: '...' }`. The operator must review and approve the newer recommendation instead. This prevents Phase 4 from executing against a stale snapshot when a more recent analysis is available.
 
 ## Savings Labelling Policy
 The savings figure is always labelled **"Potential Savings Estimate"** in all API responses and UI surfaces. It is never presented as a guarantee. This labelling is enforced at the API serialisation layer, not left to the frontend, to ensure consistency across all consumers.

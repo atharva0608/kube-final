@@ -5,7 +5,7 @@ Continuously monitors whether the live cluster state remains consistent with the
 
 ## Responsibilities
 - Run drift checks on three triggers: (1) immediately after `cluster.analysed` is received, (2) on a 5-minute recurring schedule while the recommendation is in `pending_approval` state, (3) on-demand via the `POST /clusters/:id/drift/recheck` API.
-- Use a **3-part plan identity** (`snapshot_id + analysis_version + cluster_hash`) to detect stale plans instantly — any `cluster_hash` mismatch triggers immediate invalidation without further comparison.
+- Use a **3-part plan identity** (`snapshot_id + analysis_version + cluster_hash`) to detect stale plans instantly — any `cluster_hash` mismatch triggers immediate invalidation without further comparison. Note: `cluster_hash` is computed as `SHA-256(sorted set of distinct instance_type × AZ pairs)` — node *counts* are deliberately excluded. A node count change without an instance type or AZ change does not change the hash and is instead classified as PATCHABLE NODE_COMPOSITION drift.
 - Compare **Plane 1 (Node Layout):** instance types, AZs, capacity types, node pools, node counts, allocatable CPU and memory.
 - Compare **Plane 2 (Workload Placement):** workload-to-node-type mapping, Spot vs On-Demand per workload, AZ distribution deltas, CPU/memory profile changes.
 - Classify each drift event into one of six drift types: `WORKLOAD_LEVEL`, `NODE_COMPOSITION`, `PLACEMENT_MISMATCH`, `PRICING_SHIFT`, `REPLICA_SPIKE`, `APPLICATION_GROUP_CHANGE`. Track `OWNERSHIP_CONFLICT` separately in `deployment_conflicts` — it never contributes to the drift score.
@@ -59,7 +59,7 @@ Continuously monitors whether the live cluster state remains consistent with the
 | Table | Description |
 |---|---|
 | `drift_events` | Records each detected drift occurrence. Columns: `id`, `cluster_id`, `recommendation_id`, `drift_type` (ENUM: `WORKLOAD_LEVEL`, `NODE_COMPOSITION`, `PLACEMENT_MISMATCH`, `PRICING_SHIFT`, `REPLICA_SPIKE`, `APPLICATION_GROUP_CHANGE`), `severity` (ENUM: `MINOR`, `MODERATE`, `CRITICAL`), `patchable` (boolean), `affected_workloads` (JSONB array of workload UUIDs), `detected_at`. |
-| `plan_deltas` | In-place plan patches for PATCHABLE drift. Columns: `id`, `recommendation_id`, `delta_payload` (JSONB — updated step parameters), `created_at`. |
+| `plan_deltas` | In-place plan patches for PATCHABLE drift. Columns: `id`, `recommendation_id`, `delta_payload` (JSONB — updated step parameters), `created_at`. **Retention:** `plan_deltas` rows are automatically deleted when the associated `recommendation_store` row transitions to `success`, `rolled_back`, or `drift.invalidated` state, enforced via `ON DELETE CASCADE` on `recommendation_id FK → recommendation_store(id)`. There is no time-based retention — rows live exactly as long as their parent recommendation. |
 
 **Tables this module reads (read-only):**
 | Table | Source Domain |
@@ -86,6 +86,8 @@ Continuously monitors whether the live cluster state remains consistent with the
 - **shared/db** — PostgreSQL client; drift check and `plan_delta` write are transactional.
 - **shared/logger** — structured logging with `cluster_id`, `recommendation_id`, `drift_type` context.
 
+> **Approval concurrency guard:** The drift check acquires a `SELECT FOR UPDATE` on the `recommendation_store` row before writing any drift outcome. This ensures mutual exclusion with the approval endpoint's own `SELECT FOR UPDATE`. If the lock cannot be acquired within 5 seconds, the drift check aborts for this cycle (it will re-run after `DRIFT_POLL_INTERVAL_SECONDS`). The abort is logged at INFO level — it is not an error.
+
 ## Configuration
 | Environment Variable | Default | Description |
 |---|---|---|
@@ -97,6 +99,7 @@ Continuously monitors whether the live cluster state remains consistent with the
 | `NATS_DRIFT_DETECTED_TOPIC` | `drift.detected` | NATS topic for drift detection events. |
 | `NATS_DRIFT_PATCHABLE_TOPIC` | `drift.patchable` | NATS topic for patchable drift events. |
 | `NATS_DRIFT_INVALIDATED_TOPIC` | `drift.invalidated` | NATS topic for plan invalidation events. |
+| `DRIFT_HASH_FORMAT_VERSION` | `v2` | Hash format version. `v1` = SHA-256(node_types+counts+az_distribution) (legacy). `v2` = SHA-256(sorted set of distinct instance_type × AZ pairs) (current). During migration rollout window, both v1 and v2 hashes are accepted. |
 
 ## Patchable vs Not-Patchable Classification
 
@@ -105,6 +108,7 @@ Continuously monitors whether the live cluster state remains consistent with the
 | Replica count changed within HPA bounds | PATCHABLE | Write `plan_delta`, no new approval needed (minor patch). |
 | Spot price shifted but still below OD | PATCHABLE | Write `plan_delta`, update step parameters, no new approval needed. |
 | New node added without changing plan capacity significantly | PATCHABLE | Write `plan_delta`, minor patch. |
+| Node count change (same instance type × AZ set) | PATCHABLE | Write `plan_delta`, no new approval needed (minor patch). |
 | New workload deployed requiring review | NOT PATCHABLE | Emit `drift.invalidated`, trigger Phase 2 re-analysis. |
 | Storage profile change (PVC added/removed) | NOT PATCHABLE | Emit `drift.invalidated`. |
 | PDB now blocks all eviction | NOT PATCHABLE | Emit `drift.invalidated`. |
@@ -117,6 +121,11 @@ Continuously monitors whether the live cluster state remains consistent with the
 - **NATS publish failure:** Events are retried up to 5 times with 2s exponential backoff before being written to `event_store` for deferred delivery.
 - **Plan delta write failure:** If the `plan_deltas` write fails, the drift is escalated to NOT PATCHABLE to prevent the execution engine from operating on a stale plan.
 - **Concurrent drift checks:** Guarded by a Redis distributed lock per `cluster_id`; simultaneous recheck API calls are deduplicated.
+- **Scheduler gap tolerance:** The drift polling job records its completion timestamp in Redis (`drift:last-run:{cluster_id}`) after each successful run. If a new job starts and finds that the last run was more than `DRIFT_POLL_INTERVAL_SECONDS * 3` seconds ago (meaning at least two consecutive skips), it immediately re-runs all drift type checks rather than waiting for the next scheduled cycle. This ensures REPLICA_SPIKE and APPLICATION_GROUP_CHANGE drift are not missed even if BullMQ experienced a gap of 10–15 minutes.
+
+## PLACEMENT_MISMATCH Guard — Condition 3 Detail
+
+Condition 3 — No Spot interruption on the *source node* (the node the pod previously ran on) in the `DRIFT_INTERRUPTION_GUARD_MINUTES` window. This check uses the originating interruption event against the *source node*, not the most recent interruption on any node. Additionally, pods that carry the annotation `balancekube.io/itn-evacuated: 'true'` are permanently excluded from PLACEMENT_MISMATCH counting for the current plan cycle, regardless of interruption timing — they were evacuated by the ITN handler and their rescheduling to OD is correct behavior.
 
 ## Future Enhancements
 - **Drift scoring:** Aggregate drift events into a composite drift score (0–100) to give operators a single health signal for the pending recommendation.

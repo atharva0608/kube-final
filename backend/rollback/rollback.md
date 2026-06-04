@@ -11,6 +11,7 @@ Creates immutable point-in-time snapshots of cluster infrastructure state immedi
 - Execute the restoration sequence in a fixed order: (1) restore node labels and taints to pre-execution state, (2) remove cordons from all nodes that were cordoned during execution, (3) verify that the cluster has returned to its pre-execution state.
 - Validate recovery: confirm node labels match the pre-execution snapshot, confirm no nodes remain cordoned, confirm all pods that were Running before execution are still Running (or have recovered).
 - Store snapshot payload as an immutable JSONB blob referenced by a storage handle.
+- **Snapshot freshness guard:** Before capturing the pre-execution snapshot, the rollback module checks `assembled_snapshots.collected_at` for the cluster. If the most recent assembled snapshot is older than `ROLLBACK_MAX_SNAPSHOT_AGE_MINUTES` (default: 10), execution is aborted with `failure_reason='stale_cluster_snapshot'`. Operators should wait for a fresh collection cycle before re-triggering execution. This prevents the rollback snapshot from capturing stale inventory that does not reflect the current cluster state.
 
 ## Inputs
 - **Source:** Internal call from `execution` module at the start of each execution run — pre-execution snapshot capture.
@@ -95,7 +96,7 @@ Rollback always executes the following steps in order:
 
 ## What Rollback Does NOT Do
 - **Does not move running pods.** Pod controllers (Deployments, StatefulSets) will have already created replacement pods on newly provisioned Spot nodes by the time rollback runs. Rolling back node labels prevents **future** pods from being scheduled there but does not terminate or migrate currently running pods. This is intentional — forcibly moving pods would cause additional disruption.
-- **Does not undo Karpenter NodeClaims automatically.** If a Spot `NodeClaim` was created, rollback removes the BalanceKube labels/taints from it but does not delete the `NodeClaim`. The node will naturally be drained and removed by Karpenter when its workloads migrate away. Orphaned NodeClaims are flagged in `execution_history.rollback_reason` for operator awareness.
+- **NodeClaim cleanup on rollback:** On rollback, BalanceKube annotates any NodeClaim it provisioned (identified via `balancekube.io/execution-id` annotation) with `balancekube.io/rollback-pending=true` and **cordons** the Spot node (prevents new pod scheduling). It then uses the **Kubernetes Eviction API** (not taints — to honour the hard rule against force-delete) to evict each running pod one at a time. PDB constraints are fully respected using the same retry logic as the normal drain process (`ROLLBACK_NODECLAIM_PDB_MAX_RETRIES`, default: 5 attempts at `DRAIN_PDB_RETRY_INTERVAL_SECONDS` spacing). If PDB blocks prevent eviction after max retries, `rollback_snapshots.status` is set to `restored_partial` with `failure_details.pdb_blocked_pods` listing the stuck pods, and a critical alert is raised for operator intervention. Once the node has drained successfully (zero running BalanceKube-managed pods, verified via pod watch), the `NodeClaim` deletion is triggered by the rollback module. This exception to 'rollback does not move running pods' applies exclusively to NodeClaims created by BalanceKube itself — pre-existing Spot nodes are never drained by rollback.
 - **Does not modify HPA configurations.** HPA is read-only for BalanceKube; any HPA state captured in the snapshot is for validation purposes only.
 
 ## Dependencies
@@ -111,6 +112,8 @@ Rollback always executes the following steps in order:
 | `ROLLBACK_SNAPSHOT_RETENTION_DAYS` | `30` | Number of days `retired` rollback snapshots are retained before purge. Active and `restored` snapshots are never automatically purged. |
 | `ROLLBACK_VALIDATION_POLL_INTERVAL_SECONDS` | `15` | Polling interval during recovery validation. |
 | `ROLLBACK_MAX_VALIDATION_ATTEMPTS` | `20` | Maximum number of validation polls (20 × 15s = 5 minutes) before validation is declared failed and operator alerted. |
+| `ROLLBACK_NODECLAIM_PDB_MAX_RETRIES` | `5` | Maximum PDB retry attempts during NodeClaim drain-back eviction. Lower than execution drain since rollback is already a degraded state. |
+| `ROLLBACK_MAX_SNAPSHOT_AGE_MINUTES` | `10` | Maximum age (minutes) of the most recent assembled snapshot before execution is aborted with stale_cluster_snapshot. |
 
 ## Error Handling
 - **Restoration step failure:** If restoring node labels or removing a cordon fails, the failure is logged with full context (`node_id`, `cluster_id`, `execution_id`) and the restoration continues with the remaining nodes. No partial restoration is aborted — all nodes are attempted. The final `rollback_snapshots.status` is set to `restored` (partial) with a `failure_details` JSONB field enumerating which nodes could not be restored.
